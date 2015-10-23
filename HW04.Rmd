@@ -1,0 +1,555 @@
+---
+title: "HW04"
+author: "Willis Barton"
+date: "Tuesday, March 17, 2015"
+output:
+  html_document:
+    fig_height: 3.5
+    fig_width: 7
+---
+
+#### 1. 
+This is a continuation of the analyses on the data for three bird speciesâ€”(Northern) Flicker, (Mountain) Chickadee, and (Red-naped) Sapsucker €”plus a bunch of sites at which none of these species of birds are nesting. In Homework #2 you analyzed these data using logistic regression and LDA/QDA; in Homework #3 you fit classification trees to these data; in this homework I would like you to use random forests to analyze the data. As in the previous homework assignments, the first priority is to come up with accuarte classifications of the nest sites, the second priority is to determine important variables to the birds in selecting nest sites, and the third priority is to determine whether the three species can be treated as one species (with regard to selection of bird nest sites) or need to be treated seperately.
+
+##### a) Fit random forests to the combined data, and compare the out-of-bag accuracy to the cross-validated accuracy estimates for LDA, QDA, Logistic Regression, and classification trees.
+
+```{r Important Stuff, echo=FALSE}
+suppressPackageStartupMessages(require(randomForest))
+suppressWarnings(suppressPackageStartupMessages(require(verification)))
+suppressPackageStartupMessages(require(rpart))
+suppressPackageStartupMessages(require(knitr))
+suppressPackageStartupMessages(require(caret))
+suppressPackageStartupMessages(require(class))
+source("Rcode kappa and classsum.R")
+```
+
+```{r 1a Fit forest and compute accuracy, echo=FALSE, cache=TRUE}
+nest <- read.csv("Nest.csv")
+#remove Species
+data <- nest[,-2]
+#create randomForest model
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(nestrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(nest$Nest, as.numeric(rfPrediction))
+```
+
+The following table is a comparison of the out-of-bag accuracy of the random forest model to the cross-validated accuracy estimates for LDA, QDA, Logistic Regression, and classification trees.
+
+```{r 1a Computation and comparison of methods, echo=FALSE, cache=TRUE}
+set.seed(3)
+xvs=sample(rep(c(1:10),length=nrow(data)))
+lda.xval=rep(0,length=nrow(data))
+qda.xval=rep(0,length=nrow(data))
+log.xval=rep(0,length=nrow(data))
+tre.xval=rep(0,length=nrow(data))
+rdf.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+	test=data[xvs==i,]
+	#
+	nesttre = rpart(Nest~., data=train, method="class", 
+             control=rpart.control(cp=0.0035))
+	tre.xval[xvs==i]=predict(nesttre, test, type="class")
+	#
+	nestlda <- lda(Nest~., data=train)
+  lda.xval[xvs==i]=predict(nestlda, test)$class
+  #
+  nestqda <- qda(as.factor(Nest)~., data=train)
+  qda.xval[xvs==i]=predict(nestqda, test)$class
+  #
+  nestlog <- glm(Nest~., data=train, family="binomial")
+  log.xval[xvs==i]=predict(nestlog, test, type="response")
+}
+ldaAccuracy <- class.sum(nest$Nest, lda.xval)
+qdaAccuracy <- class.sum(nest$Nest, qda.xval)
+logAccuracy <- class.sum(nest$Nest, log.xval)
+treAccuracy <- class.sum(nest$Nest, tre.xval)
+
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(ldaAccuracy[,2])), 
+                    t(as.numeric(qdaAccuracy[,2])), 
+                    t(as.numeric(logAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy of Random Forest", 
+                          "Cross-validated accuracy of Linear Discriminant", 
+                          "Cross-validated accuracy of Quadratic Discriminant", 
+                          "Cross-validated accuracy of Logistic Regression", 
+                          "Cross-validated accuracy of Pruned Tree")
+kable(comparison)
+```
+
+##### b) For the three species separately, fit random forests and compare the out-of-bag accuracies you obtain with cross-validated accuracies for classification trees.
+
+<u>Chickadee</u>
+
+```{r 1b chickadee, echo=FALSE, cache=TRUE}
+data=subset(nest,nest[[2]]%in%c("Chickadee","Non-nest"))[,-2]
+
+#create randomForest model
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(nestrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(data$Nest, as.numeric(rfPrediction))
+xvs=sample(rep(c(1:10),length=nrow(data)))
+tre.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+  #
+  nesttre = rpart(Nest~., data=train, method="class", 
+             control=rpart.control(cp=0.0035))
+	tre.xval[xvs==i]=predict(nesttre, test, type="class")
+}
+treAccuracy <- class.sum(data$Nest, tre.xval)
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy of Random Forest", 
+                          "Cross-validated accuracy of Pruned Tree")
+kable(comparison)
+```
+   
+<u>Flicker</u>
+
+```{r 1b flicker, echo=FALSE, cache=TRUE}
+data=subset(nest,nest[[2]]%in%c("Flicker","Non-nest"))[,-2]
+
+#create randomForest model
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(nestrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(data$Nest, as.numeric(rfPrediction))
+xvs=sample(rep(c(1:10),length=nrow(data)))
+tre.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+	#
+	nesttre = rpart(Nest~., data=train, method="class", 
+             control=rpart.control(cp=0.0035))
+	tre.xval[xvs==i]=predict(nesttre, test, type="class")
+}
+treAccuracy <- class.sum(data$Nest, tre.xval)
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy of Random Forest", 
+                          "Cross-validated accuracy of Pruned Tree")
+kable(comparison)
+```
+   
+<u>Sapsucker</u>
+
+```{r 1b sapsucker, echo=FALSE, cache=TRUE}
+data=subset(nest,nest[[2]]%in%c("Sapsucker","Non-nest"))[,-2]
+
+#create randomForest model
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(nestrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(data$Nest, as.numeric(rfPrediction))
+xvs=sample(rep(c(1:10),length=nrow(data)))
+tre.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+  #
+	nesttre = rpart(Nest~., data=train, method="class", 
+             control=rpart.control(cp=0.0035))
+	tre.xval[xvs==i]=predict(nesttre, test, type="class")
+}
+treAccuracy <- class.sum(data$Nest, tre.xval)
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy of Random Forest", 
+                          "Cross-validated accuracy of Pruned Tree")
+kable(comparison)
+```
+
+##### c) For the three species separately, use random forests to identify the most important variables in nest site selection. Construct and interpret partial dependence plots for the "most important" variables for each species.
+  
+<u>Chickadee</u>
+  
+```{r 1c chickadee, echo=FALSE}
+set.seed(3)
+data=subset(nest,nest[[2]]%in%c("Chickadee","Non-nest"))[,-2]
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+varImpPlot(nestrf)
+```
+
+The important variables are NumTree3to6in, NumConifer, NumTree9to15, and NumTreelt1in.
+
+```{r 1c chickadee partial plots, echo=FALSE}
+par(mfrow=c(1,2))
+partialPlot(nestrf,data,NumTree3to6in,which.class="1")
+partialPlot(nestrf,data,NumConifer,which.class="1")
+partialPlot(nestrf,data,NumTree9to15in,which.class="1")
+partialPlot(nestrf,data,NumTreelt1in,which.class="1")
+```
+
+As the variables NumTree3to6in and NumTreelt1in increase, the probability of finding a nest site for Chickadees decreases. But as the variables NumConifer and NumTree9to15in increase, the probability of finding a nest site for birds increases.
+  
+<u>Flicker</u>
+  
+```{r 1c flicker, echo=FALSE}
+set.seed(3)
+data=subset(nest,nest[[2]]%in%c("Flicker","Non-nest"))[,-2]
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+varImpPlot(nestrf)
+```
+
+The important variables are NumTree3to6in, NumTree1to3in, NumTree9to15, and NumTree6to9in.
+
+```{r 1c flicker partial plots, echo=FALSE}
+par(mfrow=c(1,2))
+partialPlot(nestrf,data,NumTree3to6in,which.class="1")
+partialPlot(nestrf,data,NumTree1to3in,which.class="1")
+partialPlot(nestrf,data,NumTree9to15in,which.class="1")
+partialPlot(nestrf,data,NumTree6to9in,which.class="1")
+par(mfrow=c(1,1))
+```
+
+As the variables NumTree3to6in and NumTree6to9in increase, the probability of finding a nest site for Northern Flickers decreases. As the variable NumTree9to15in increases, the probability of finding a nest site for birds increases. And NumTree1to3in is a little wierd, I don't know what to make of it.  
+  
+<u>Sapsucker</u>
+  
+```{r 1c sapsucker, echo=FALSE}
+set.seed(3)
+data=subset(nest,nest[[2]]%in%c("Sapsucker","Non-nest"))[,-2]
+nestrf <- randomForest(as.factor(Nest)~., data=data, 
+                       keep.forest=T, proximity=T)
+varImpPlot(nestrf)
+```
+
+The important variables are NumTree3to6in, NumTree9to15, NumTree6to9in, and NumTree1to3in.
+
+```{r 1c sapsucker partial plots, echo=FALSE}
+par(mfrow=c(1,2))
+partialPlot(nestrf,data,NumTree3to6in,which.class="1")
+partialPlot(nestrf,data,NumTree9to15in,which.class="1")
+partialPlot(nestrf,data,NumTree6to9in,which.class="1")
+partialPlot(nestrf,data,NumTree1to3in,which.class="1")
+```
+
+As the variable NumTree3to6in increases, the probability of finding a sapsucker nest site decreases. As the variables NumTree9to15in and NumTree6to9in increase, for the most part, the probability of finding nest sites increases. As NumTree1to3in increases through most of the data the probability decreases, but in the top 20% it seems like it is likely to find nest sites again for the bird. This might be due to noise.  
+
+
+##### d) Using <b>Species</b> as the response variable, fit random forests to the combined data. Look at the out-of-bag confusion matrix for random forests to see where the misclassifications are occurring.
+
+```{r 1d, echo=FALSE, cache=TRUE}
+data <- nest[,-1]
+#create randomForest model
+speciesrf <- randomForest(as.factor(Species)~., data=data,
+                          keep.forest=T, proximity=T)
+rfPrediction <- predict(speciesrf)
+
+kable(table(nest$Species, rfPrediction))
+```
+
+Almost 2/3 of the sites that had Chickadees are mislabeled as non-nest sites or Sapsucker nest sites. Flickers were poorly predicted, with only 6 out of 23 correctly classified, the rest being scattered among the other 3 classes. The Sapsucker was like the Chickadee in that over 70%  were misclassified, mostly being incorrectly classified as Chickadee.
+
+##### e) Continuing the analysis in part d), use random forests to identify variables that are important for the classification.
+
+```{r 1e, echo=FALSE}
+set.seed(3)
+varImpPlot(speciesrf)
+# par(mfrow=c(2,2))
+# partialPlot(speciesrf,data,NumTree3to6in, which.class="Non-nest")
+# partialPlot(speciesrf,data,NumTree1to3in, which.class="Non-nest")
+# partialPlot(speciesrf,data,NumTree9to15in, which.class="Non-nest")
+# partialPlot(speciesrf,data,NumTree6to9in, which.class="Non-nest")
+# par(mfrow=c(1,1))
+```
+  
+The most important variables for the classification appear to be, in decending order, NumTree3to6in, NumTree9to15in, NumTree1to3in, NumTree6to9in, and NumTreelt1in.
+
+
+#### 2. 
+In Homework #3 you fit a classification tree to the <i>Lichen Air Quality</i> data for a species of lichen other than <i>Lobaria oregana</i>. For that same species,
+
+##### a) Fit random forests, obtaining the out-of-bag accuracies and cross-validated accuracies, and also evaluate the classification by predicting for the <i>Pilot Random Grid</i> data.
+
+```{r 2a, echo=FALSE}
+lichen=read.csv("LAQI.csv")
+pilotI=read.csv("pilotI.csv")
+pilotI=pilotI[,c(-2, -3, -5:-9)]
+data=lichen[,c(-2, -3, -5:-9)]
+#names(data)
+#create randomForest model
+set.seed(5)
+pulmrf <- randomForest(as.factor(LobaPulm)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(pulmrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(data$LobaPulm, as.numeric(rfPrediction))
+
+xvs=sample(rep(c(1:10),length=nrow(data)))
+ran.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+	#
+	rfpulm <- randomForest(as.factor(LobaPulm)~., data=train, 
+                         keep.forest=T, proximity=T)
+  ran.xval[xvs==i]=predict(rfpulm, test)
+}
+xvalAccuracy <- class.sum(data$LobaPulm, ran.xval)
+pilotPrediction <- predict(pulmrf, pilotI)
+pilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotPrediction))
+
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(xvalAccuracy[,2])), 
+                    t(as.numeric(pilotAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy of Random Forest", 
+                          "Cross-Validated accuracy of random forest", 
+                          "Prediction Accuracy onto Pilot Random Grid data")
+kable(comparison)
+```
+
+##### b) Also using random forests, identify a set of variables important for the classification, and interpret the effects of the variables using partial dependence plots.
+
+```{r 2b varImpPlot, echo=FALSE}
+varImpPlot(pulmrf)
+holder <- varImpPlot(pulmrf)
+important <- row.names(holder)[sort(holder, decreasing=T, index.return=T)$ix]
+```
+
+I will include the top 8 important variables. They are as follows:
+
+```{r 2b partial dependence, echo=FALSE}
+par(mfrow=c(1,2))
+for(i in 1:8){
+  partialPlot(pulmrf, data, important[i], which.class=1, xlab=important[i],
+              main=paste("Partial Dependence on", important[i]))
+}
+
+par(mfrow=c(1,1))
+```
+  
+It appears that for each variable, as it increases the probability of finding Lobapulm increases.
+
+##### c) Using only the variables indentified as important, fit random forest, obtaining the out-of-bag accuracies and accuracies for predicting for the pilot random grid data.
+
+I will use the following eight variables that were identified as important:
+`r important[1:8]`
+
+```{r 2c, echo=FALSE}
+lichen=read.csv("LAQI.csv")
+pilotI=read.csv("pilotI.csv")
+pilotI.2c=pilotI[,c("LobaPulm", important[1:8])]
+data=lichen[,c("LobaPulm", important[1:8])]
+#names(data)
+#create randomForest model
+pulmrf <- randomForest(as.factor(LobaPulm)~., data=data, 
+                       keep.forest=T, proximity=T)
+rfPrediction <- predict(pulmrf)
+#table(nest$Nest, rfPrediction)
+rfAccuracy <- class.sum(data$LobaPulm, as.numeric(rfPrediction))
+
+xvs=sample(rep(c(1:10),length=nrow(data)))
+ran.xval=rep(0,length=nrow(data))
+for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+  #
+	rfpulm <- randomForest(as.factor(LobaPulm)~., data=train, 
+                         keep.forest=T, proximity=T)
+  ran.xval[xvs==i]=predict(rfpulm, test)
+}
+xvalAccuracy <- class.sum(data$LobaPulm, ran.xval)
+pilotPrediction <- predict(pulmrf, pilotI.2c)
+pilotAccuracy <- class.sum(pilotI.2c$LobaPulm, as.numeric(pilotPrediction))
+
+comparison <- rbind(t(as.numeric(rfAccuracy[,2])), 
+                    t(as.numeric(xvalAccuracy[,2])), 
+                    t(as.numeric(pilotAccuracy[,2])))
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Out-of-bag accuracy for Random Forest", 
+                          "Cross-Validated Accuracy for Random Forest", 
+                          "Pilot Prediction Accuracy")
+kable(comparison)
+
+```
+
+
+##### d) Fit logistic regression, LDA, QDA, and nearest neighbor classifiers for the same lichen species, using variable selection, when appropriate. Obtain cross-validated classification accuracies for each method, and the accuracies of prediction onto the <i>Pilot Random Grid</i> data for all four methods.
+
+```{r 2d, echo=FALSE, cache=TRUE}
+set.seed(3)
+data <- lichen[,!(names(lichen) %in% c("LobaOreg", "NephBell", "NephHelv",
+                                       "PseuAnom", "PseuAnth", "PseuCroc",
+                                       "VapPressAve", "taveyy", "etpjyy",
+                                       "SatVapPressAve", "taveyy", "etpjyy",
+                                       "VapPressDefDiff", "SatVapPressDiff",
+                                       "TempAve", "TempDiff", "PlotNum",
+                                       "StandAgeClass", "ReserveStatus",
+                                       "formask"
+                                       ))]
+pilotI.2d <- pilotI[,!(names(lichen) %in% c("LobaOreg", "NephBell", "NephHelv",
+                                       "PseuAnom", "PseuAnth", "PseuCroc",
+                                       "VapPressAve", "taveyy", "etpjyy",
+                                       "SatVapPressAve", "taveyy", "etpjyy",
+                                       "VapPressDefDiff", "SatVapPressDiff",
+                                       "TempAve", "TempDiff", "PlotNum",
+                                       "StandAgeClass", "ReserveStatus",
+                                       "formask"
+                                       ))]
+data <- data[,c(2,1,3:35)]
+pilotI.2d <- pilotI.2d[,c(2,1,3:35)]
+xvs=sample(rep(c(1:10),length=nrow(data)))
+lda.xval=rep(0,length=nrow(data))
+qda.xval=rep(0,length=nrow(data))
+log.xval=rep(0,length=nrow(data))
+knn.xval=rep(0,length=nrow(data))
+
+tre.xval=rep(0,length=nrow(data))
+rdf.xval=rep(0,length=nrow(data))
+
+suppressWarnings(for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+	#
+	LobaPulmlda <- lda(LobaPulm~., data=train)
+  lda.xval[xvs==i]=predict(LobaPulmlda, test)$class
+  #
+  LobaPulmqda <- qda(LobaPulm~., data=train)
+  qda.xval[xvs==i]=predict(LobaPulmqda, test)$class
+  #
+  LobaPulmlog <- glm(LobaPulm~., data=train, family="binomial")
+  log.xval[xvs==i]=predict(LobaPulmlog, test, type="response")
+  #
+  knn.xval[xvs==i] <- knn(train[,-1], test[,-1], train[,1], 6)
+  #
+  LobaPulmtre <- rpart(LobaPulm~ ., data=train, method="class", 
+                       control=rpart.control(cp=0.0045))
+  tre.xval[xvs==i]=predict(LobaPulmtre, test, type="class")
+  #
+  LobaPulmrdf <- randomForest(as.factor(LobaPulm)~., data=train, 
+                         keep.forest=T, proximity=T)
+  rdf.xval[xvs==i]=predict(LobaPulmrdf, test)
+})
+ldaAccuracy <- class.sum(data$LobaPulm, lda.xval)
+qdaAccuracy <- class.sum(data$LobaPulm, qda.xval)
+logAccuracy <- class.sum(data$LobaPulm, log.xval)
+knnAccuracy <- class.sum(data$LobaPulm, knn.xval)
+treAccuracy <- class.sum(data$LobaPulm, tre.xval)
+rdfAccuracy <- class.sum(data$LobaPulm, rdf.xval)
+
+pilotpredictlda <- suppressWarnings(predict(lda(LobaPulm~., data=data), 
+                                            pilotI.2d)$class)
+pilotpredictqda <- predict(qda(LobaPulm~., data=data), pilotI.2d)$class
+pilotpredictlog <- round(predict(glm(LobaPulm~., data=data, family="binomial"), 
+                                 pilotI.2d, type="response"))
+pilotpredictknn <- knn(data[,-1], pilotI.2d[,-1], data[,1], 6)
+
+pilotpredicttre <- predict(rpart(LobaPulm~ ., data=train, method="class", 
+                                 control=rpart.control(cp=0.0045)), 
+                           pilotI.2d, type="class")
+pilotpredictrdf <- predict(randomForest(as.factor(LobaPulm)~., data=data), 
+                           pilotI.2d)
+
+ldaPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictlda))
+qdaPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictqda))
+logPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictlog))
+knnPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictknn))
+trePilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredicttre))
+rdfPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictrdf))
+
+comparison <- rbind(t(as.numeric(ldaAccuracy[,2])), 
+                    t(as.numeric(qdaAccuracy[,2])), 
+                    t(as.numeric(logAccuracy[,2])),
+                    t(as.numeric(knnAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])),
+                    t(as.numeric(rdfAccuracy[,2])),
+                    t(as.numeric(ldaPilotAccuracy[,2])),
+                    t(as.numeric(qdaPilotAccuracy[,2])),
+                    t(as.numeric(logPilotAccuracy[,2])),
+                    t(as.numeric(knnPilotAccuracy[,2])),
+                    t(as.numeric(trePilotAccuracy[,2])),
+                    t(as.numeric(rdfPilotAccuracy[,2]))
+                    )
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Cross-Validated LDA", 
+                          "Cross-Validated QDA", 
+                          "Cross-Validated Logistic Regression", 
+                          "Cross-Validated Nearest Neighbor (k=6)",
+                          "Cross-Validated Classification Tree",
+                          "Cross-Validated Random Forest",
+                          "LDA prediction for Pilot Random Grid data", 
+                          "QDA prediction for Pilot Random Grid data", 
+                          "Logistic Regression prediction for Pilot", 
+                          "Nearest Neighbor prediction for Pilot",
+                          "Classification Tree prediction for Pilot",
+                          "Random Forest prediction for Pilot")
+#kable(comparison)
+kable(comparison[1:4,])
+kable(comparison[7:10,])
+#findLinearCombos(data)
+```
+
+
+##### e) Finally, summarize your results for all 6 methods (LDA, QDA, Logistic Regression, nearest neighbor, classification tree, and random forest) in two tables, one table containing the cross-validated prediction accuracies and the other containing the accuracies for prediction onto the <i>Pilot Random Grid</i> data.
+
+The following table contains the cross-validated prediction accuracies of each model.
+
+```{r 2ei, echo=FALSE, cache=TRUE}
+kable(comparison[1:6,])
+```
+
+The following table contains the accuracies for prediction of each model onto the <i>Pilot Random Grid</i> data.
+
+```{r 2eii, echo=FALSE, cache=TRUE}
+kable(comparison[7:12,])
+```
+
+#### 3.
+This problem continues the analysis of the <i>Forensic Glass</i> data.
+
+##### a) Apply random forests to the data and obtain the out-of-bag confusion matrix. How well can we classify these data, and where are the major misclassifications? How do you results compare to the classification tree you fitted in Homework #3.
+
+The following is the out-of-bag confusion matrix for the random forest model of the forensic glass data.
+  
+```{r 3a glass confusion matrix and misclassification, echo=FALSE}
+set.seed(3)
+glass <- read.csv("Glass.csv")
+glass <- glass[,c(10,1:9)]
+glass$GlassType <- as.factor(glass$GlassType)
+glassrdf <- randomForest(GlassType~., data=glass)
+confusion <- glassrdf$confusion[,1:6]
+rownames(confusion) <- as.character(paste("true class", 1:6))
+colnames(confusion) <- as.character(paste("pred class", 1:6))
+kable(confusion)
+```
+
+The OOB estimate of percent correctly classified is `r round(100*sum(diag(glassrdf$confusion[,1:6]))/nrow(glass), 2)`%  
+The random forest results compare favorably against the classification tree fitted in Homework #3. The pruned tree had a PCC value of 67.76%
+
+##### b) Use random forests to select a subset of the variables (which may be all the variables!) Refit random forests with only the important variables and obtaion the out-of-bag confusion matrix. Did you observe any change in predictive accuracy?
+
+```{r 3b variable importance graph, echo=FALSE}
+varImpPlot(glassrdf)
+```
+
+I will use the variables Aluminum, Magnesium, Refindex, Calcium, and Sodium
+
+```{r 3bi fit reduced model show confusion matrix, echo=FALSE}
+set.seed(3)
+glassrdf <- randomForest(GlassType ~ Magnesium + Aluminum + Refindex + 
+                                     Calcium + Sodium, data=glass)
+confusion <- glassrdf$confusion[,1:6]
+rownames(confusion) <- as.character(paste("true class", 1:6))
+colnames(confusion) <- as.character(paste("pred class", 1:6))
+kable(confusion)
+```
+
+The OOB estimate of PCC for the reduced model is only slightly lower at `r round(100*sum(diag(glassrdf$confusion[,1:6]))/nrow(glass), 2)`%  

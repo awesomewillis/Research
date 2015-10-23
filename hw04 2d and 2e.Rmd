@@ -1,0 +1,147 @@
+---
+title: "hw04 2d and 2e"
+author: "Willis Barton"
+date: "Friday, March 27, 2015"
+output: html_document
+---
+
+```{r Important Stuff, echo=FALSE}
+suppressPackageStartupMessages(require(randomForest))
+suppressWarnings(suppressPackageStartupMessages(require(verification)))
+suppressPackageStartupMessages(require(rpart))
+suppressPackageStartupMessages(require(knitr))
+suppressPackageStartupMessages(require(caret))
+suppressPackageStartupMessages(require(class))
+source("Rcode kappa and classsum.R")
+```
+
+
+##### d) Fit logistic regression, LDA, QDA, and nearest neighbor classifiers for the same lichen species, using variable selection, when appropriate. Obtain cross-validated classification accuracies for each method, and the accuracies of prediction onto the <i>Pilot Random Grid</i> data for all four methods.
+
+```{r 2d, echo=FALSE, cache=TRUE}
+set.seed(3)
+data <- lichen[,!(names(lichen) %in% c("LobaOreg", "NephBell", "NephHelv",
+                                       "PseuAnom", "PseuAnth", "PseuCroc",
+                                       "VapPressAve", "taveyy", "etpjyy",
+                                       "SatVapPressAve", "taveyy", "etpjyy",
+                                       "VapPressDefDiff", "SatVapPressDiff",
+                                       "TempAve", "TempDiff", "PlotNum",
+                                       "StandAgeClass", "ReserveStatus",
+                                       "formask"
+                                       ))]
+pilotI.2d <- pilotI[,!(names(lichen) %in% c("LobaOreg", "NephBell", "NephHelv",
+                                       "PseuAnom", "PseuAnth", "PseuCroc",
+                                       "VapPressAve", "taveyy", "etpjyy",
+                                       "SatVapPressAve", "taveyy", "etpjyy",
+                                       "VapPressDefDiff", "SatVapPressDiff",
+                                       "TempAve", "TempDiff", "PlotNum",
+                                       "StandAgeClass", "ReserveStatus",
+                                       "formask"
+                                       ))]
+data <- data[,c(2,1,3:35)]
+pilotI.2d <- pilotI.2d[,c(2,1,3:35)]
+xvs=sample(rep(c(1:10),length=nrow(data)))
+lda.xval=rep(0,length=nrow(data))
+qda.xval=rep(0,length=nrow(data))
+log.xval=rep(0,length=nrow(data))
+knn.xval=rep(0,length=nrow(data))
+
+tre.xval=rep(0,length=nrow(data))
+rdf.xval=rep(0,length=nrow(data))
+
+suppressWarnings(for(i in 1:10){
+  train=data[xvs!=i,]
+  test=data[xvs==i,]
+  #
+	LobaPulmlda <- lda(LobaPulm~., data=train)
+  lda.xval[xvs==i]=predict(LobaPulmlda, test)$class
+  #
+  LobaPulmqda <- qda(LobaPulm~., data=train)
+  qda.xval[xvs==i]=predict(LobaPulmqda, test)$class
+  #
+  LobaPulmlog <- glm(LobaPulm~., data=train, family="binomial")
+  log.xval[xvs==i]=predict(LobaPulmlog, test, type="response")
+  #
+  knn.xval[xvs==i] <- knn(train[,-1], test[,-1], train[,1], 6)
+  #
+  LobaPulmtre <- rpart(LobaPulm~ ., data=train, method="class", 
+                       control=rpart.control(cp=0.0045))
+  tre.xval[xvs==i]=predict(LobaPulmtre, test, type="class")
+  #
+  LobaPulmrdf <- randomForest(as.factor(LobaPulm)~., data=train, 
+                         keep.forest=T, proximity=T)
+  rdf.xval[xvs==i]=predict(LobaPulmrdf, test)
+})
+ldaAccuracy <- class.sum(data$LobaPulm, lda.xval)
+qdaAccuracy <- class.sum(data$LobaPulm, qda.xval)
+logAccuracy <- class.sum(data$LobaPulm, log.xval)
+knnAccuracy <- class.sum(data$LobaPulm, knn.xval)
+treAccuracy <- class.sum(data$LobaPulm, tre.xval)
+rdfAccuracy <- class.sum(data$LobaPulm, rdf.xval)
+
+pilotpredictlda <- suppressWarnings(predict(lda(LobaPulm~., data=data), 
+                                            pilotI.2d)$class)
+pilotpredictqda <- predict(qda(LobaPulm~., data=data), pilotI.2d)$class
+pilotpredictlog <- round(predict(glm(LobaPulm~., data=data, family="binomial"), 
+                                 pilotI.2d, type="response"))
+pilotpredictknn <- knn(data[,-1], pilotI.2d[,-1], data[,1], 6)
+
+pilotpredicttre <- predict(rpart(LobaPulm~ ., data=train, method="class", 
+                                 control=rpart.control(cp=0.0045)), 
+                           pilotI.2d, type="class")
+pilotpredictrdf <- predict(randomForest(as.factor(LobaPulm)~., data=data), 
+                           pilotI.2d)
+
+ldaPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictlda))
+qdaPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictqda))
+logPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictlog))
+knnPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictknn))
+trePilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredicttre))
+rdfPilotAccuracy <- class.sum(pilotI$LobaPulm, as.numeric(pilotpredictrdf))
+
+comparison <- rbind(t(as.numeric(ldaAccuracy[,2])), 
+                    t(as.numeric(qdaAccuracy[,2])), 
+                    t(as.numeric(logAccuracy[,2])),
+                    t(as.numeric(knnAccuracy[,2])), 
+                    t(as.numeric(treAccuracy[,2])),
+                    t(as.numeric(rdfAccuracy[,2])),
+                    t(as.numeric(ldaPilotAccuracy[,2])),
+                    t(as.numeric(qdaPilotAccuracy[,2])),
+                    t(as.numeric(logPilotAccuracy[,2])),
+                    t(as.numeric(knnPilotAccuracy[,2])),
+                    t(as.numeric(trePilotAccuracy[,2])),
+                    t(as.numeric(rdfPilotAccuracy[,2]))
+                    )
+colnames(comparison) <- c("PCC", "Specificity", "Sensitivity", "Kappa", "AUC")
+rownames(comparison) <- c("Cross-Validated LDA", 
+                          "Cross-Validated QDA", 
+                          "Cross-Validated Logistic Regression", 
+                          "Cross-Validated Nearest Neighbor (k=6)",
+                          "Cross-Validated Classification Tree",
+                          "Cross-Validated Random Forest",
+                          "LDA prediction for Pilot Random Grid data", 
+                          "QDA prediction for Pilot Random Grid data", 
+                          "Logistic Regression prediction for Pilot", 
+                          "Nearest Neighbor prediction for Pilot",
+                          "Classification Tree prediction for Pilot",
+                          "Random Forest prediction for Pilot")
+#kable(comparison)
+kable(comparison[1:4,])
+kable(comparison[7:10,])
+#findLinearCombos(data)
+```
+
+
+##### e) Finally, summarize your results for all 6 methods (LDA, QDA, Logistic Regression, nearest neighbor, classification tree, and random forest) in two tables, one table containing the cross-validated prediction accuracies and the other containing the accuracies for prediction onto the <i>Pilot Random Grid</i> data.
+
+The following table contains the cross-validated prediction accuracies of each model.
+
+```{r 2ei, echo=FALSE, cache=TRUE}
+kable(comparison[1:6,])
+```
+
+The following table contains the accuracies for prediction of each model onto the <i>Pilot Random Grid</i> data.
+
+```{r 2eii, echo=FALSE, cache=TRUE}
+kable(comparison[7:12,])
+```
